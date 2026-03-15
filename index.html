@@ -1,0 +1,1484 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>140k Neuron Fly - Fixed Legs & Pro Camera</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #dce5e8; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; touch-action: none; }
+        #canvas-container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; touch-action: none; }
+        
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 10; pointer-events: none; transition: opacity 0.3s ease-in-out; display: flex; flex-direction: column; justify-content: flex-start; padding: 8px; gap: 6px;}
+        .ui-hidden { opacity: 0; pointer-events: none !important; }
+        
+        .panel { background: rgba(12, 12, 16, 0.7); border: 1px solid rgba(100, 150, 255, 0.1); border-radius: 6px; padding: 6px; pointer-events: auto; backdrop-filter: blur(4px); box-shadow: 0 4px 10px rgba(0,0,0,0.5); color: #e2e8f0; position: relative; overflow: hidden; max-width: 200px; width: 100%; }
+        .btn { background: #3b82f6; color: white; border: none; padding: 4px 8px; border-radius: 3px; cursor: pointer; transition: all 0.2s; font-size: 0.6rem; font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,0.4); margin-right: 2px; margin-bottom: 2px; z-index: 2; position: relative;}
+        .btn:hover { background: #2563eb; transform: translateY(-1px); }
+        .btn:active { transform: translateY(1px); }
+        .btn-dust { background: #8b5cf6; }
+        
+        .stat-label { font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; font-weight: bold;}
+        .bar-container { width: 100%; height: 4px; background: rgba(30, 41, 59, 0.8); border-radius: 2px; overflow: hidden; margin-top: 1px; }
+        .bar-fill { height: 100%; transition: width 0.3s ease; }
+        
+        #network-canvas { width: 100%; height: 60px; background: rgba(0,0,0,0.8); border-radius: 4px; margin-top: 2px; }
+
+        .fab-container { position: absolute; bottom: 20px; right: 20px; z-index: 20; display: flex; flex-direction: column; gap: 10px; align-items: flex-end; }
+        .fab { background: rgba(30, 41, 59, 0.9); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 50%; width: 55px; height: 55px; display: flex; justify-content: center; align-items: center; cursor: pointer; backdrop-filter: blur(4px); box-shadow: 0 4px 12px rgba(0,0,0,0.5); transition: all 0.2s; pointer-events: auto; }
+        .fab:hover { background: rgba(59, 130, 246, 1); transform: scale(1.05); }
+
+        .cam-label { background: rgba(0,0,0,0.8); padding: 8px 14px; border-radius: 8px; font-size: 0.9rem; font-weight: bold; color: #60a5fa; pointer-events: none; margin-bottom: 5px; opacity: 0; transition: opacity 0.3s; text-transform: uppercase; letter-spacing: 1px; }
+        .connectome-badge { display: inline-block; background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid #34d399; padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; font-family: monospace; letter-spacing: 0.5px; }
+
+        #cam-toast { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(59, 130, 246, 0.9); color: white; padding: 10px 20px; border-radius: 20px; font-size: 0.85rem; font-weight: bold; pointer-events: none; opacity: 0; transition: opacity 0.5s; z-index: 50; text-align: center;}
+
+        @media (max-width: 768px) {
+            .panel { padding: 12px; }
+            #network-canvas { height: 90px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+    <div id="cam-toast">Aage piche karne ke liye 2 ungliyan (fingers) use karein!</div>
+
+    <div class="fab-container">
+        <div id="cam-name" class="cam-label">Peeche Se Dekhein</div>
+        <button id="btn-camera" class="fab" title="Camera Badlein">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+        </button>
+        <button id="toggle-ui-btn" class="fab" title="UI Chupayein">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h4l2-9 5 18 4-10h5"/></svg>
+        </button>
+    </div>
+
+    <div id="ui-layer">
+        <div class="flex flex-col gap-2 w-full">
+            <div class="panel">
+                <div class="flex justify-between items-center mb-1 border-b border-gray-700 pb-1">
+                    <h2 class="text-[0.65rem] font-bold text-blue-400">CONNECTOME</h2>
+                    <span class="connectome-badge">140k Neurons</span>
+                </div>
+                
+                <div class="flex justify-between items-center">
+                    <span class="stat-label">State:</span>
+                    <strong id="val-state" class="text-green-400 text-[0.65rem] truncate ml-2">IDLE</strong>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-2 mt-2">
+                    <div>
+                        <div class="flex justify-between items-center">
+                            <div class="stat-label">Bhookh</div>
+                            <span id="val-hunger" class="text-[0.5rem] text-gray-400">0%</span>
+                        </div>
+                        <div class="bar-container"><div id="bar-hunger" class="bar-fill" style="width: 0%; background: #ef4444;"></div></div>
+                    </div>
+                    <div>
+                        <div class="flex justify-between items-center">
+                            <div class="stat-label">Pyaas</div>
+                            <span id="val-thirst" class="text-[0.5rem] text-gray-400">0%</span>
+                        </div>
+                        <div class="bar-container"><div id="bar-thirst" class="bar-fill" style="width: 0%; background: #3b82f6;"></div></div>
+                    </div>
+                    <div>
+                        <div class="flex justify-between items-center">
+                            <div class="stat-label">Neend</div>
+                            <span id="val-sleep" class="text-[0.5rem] text-gray-400">0%</span>
+                        </div>
+                        <div class="bar-container"><div id="bar-sleep" class="bar-fill" style="width: 0%; background: #8b5cf6;"></div></div>
+                    </div>
+                    <div>
+                        <div class="flex justify-between items-center">
+                            <div class="stat-label">Thakan</div>
+                            <span id="val-fatigue" class="text-[0.5rem] text-gray-400">0%</span>
+                        </div>
+                        <div class="bar-container"><div id="bar-fatigue" class="bar-fill" style="width: 0%; background: #fbbf24;"></div></div>
+                    </div>
+                    <div>
+                        <div class="flex justify-between items-center">
+                            <div class="stat-label">Umar</div>
+                            <span id="val-age" class="text-[0.5rem] text-gray-400">0%</span>
+                        </div>
+                        <div class="bar-container"><div id="bar-age" class="bar-fill" style="width: 0%; background: #60a5fa;"></div></div>
+                    </div>
+                    <div>
+                        <div class="flex justify-between items-center">
+                            <div class="stat-label">Taqaat</div>
+                            <span id="val-energy" class="text-[0.5rem] text-gray-400">100%</span>
+                        </div>
+                        <div class="bar-container"><div id="bar-energy" class="bar-fill" style="width: 100%; background: #10b981;"></div></div>
+                    </div>
+                    <div>
+                        <div class="flex justify-between items-center">
+                            <div class="stat-label">Seekhna</div>
+                            <span id="val-learning" class="text-[0.5rem] text-gray-400">0%</span>
+                        </div>
+                        <div class="bar-container"><div id="bar-learning" class="bar-fill" style="width: 0%; background: #f472b6;"></div></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="flex justify-between items-center mb-1 border-b border-gray-700 pb-1">
+                    <h2 class="text-[0.65rem] font-bold text-blue-400">CONTROLS</h2>
+                    <div class="flex gap-1">
+                        <button class="btn !mb-0 !mr-0" id="btn-food">Food</button>
+                        <button class="btn btn-dust !mb-0 !mr-0" id="btn-dust">Dust</button>
+                        <button class="btn !mb-0 !mr-0" id="btn-scare" style="background:#ef4444">Scare</button>
+                    </div>
+                </div>
+                <canvas id="network-canvas"></canvas>
+            </div>
+        </div>
+    </div>
+
+<script>
+/**
+ * REALISTIC DROSOPHILA CONNECTOME
+ * Bug Fix: Legs point downwards to the ground accurately instead of pointing up.
+ */
+
+const MAP_RADIUS = 250; 
+const SAFE_RADIUS = 120; 
+
+let wind = new THREE.Vector3(0.05, 0, 0.02);
+let time = 0;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xdce5e8);
+scene.fog = new THREE.Fog(0xdce5e8, 100, 600);
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1500);
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enabled = false; 
+controls.maxPolarAngle = Math.PI / 2 - 0.05; 
+controls.minDistance = 5;    
+controls.maxDistance = 400;  
+controls.enableDamping = true; 
+controls.dampingFactor = 0.05;
+controls.enablePan = true;   
+controls.panSpeed = 1.2;     
+controls.keyPanSpeed = 15.0; 
+controls.listenToKeyEvents(window); 
+
+controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.PAN_DOLLY };
+controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.75); 
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0xfff5e6, 0.9);
+dirLight.position.set(100, 200, 100);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.width = 2048;
+dirLight.shadow.mapSize.height = 2048;
+const d = 200;
+dirLight.shadow.camera.left = -d; dirLight.shadow.camera.right = d;
+dirLight.shadow.camera.top = d; dirLight.shadow.camera.bottom = -d;
+dirLight.shadow.bias = -0.001;
+scene.add(dirLight);
+
+// --- PROCEDURAL TEXTURES ---
+function createHairyTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256; canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#221108';
+    ctx.fillRect(0, 0, 256, 256);
+    for(let i=0; i<5000; i++) {
+        ctx.strokeStyle = `rgba(10, 5, 2, ${Math.random()*0.5})`;
+        ctx.lineWidth = 1;
+        const x = Math.random()*256;
+        const y = Math.random()*256;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.random()*4, y + Math.random()*4); ctx.stroke();
+    }
+    return new THREE.CanvasTexture(canvas);
+}
+
+function createGrassTexture(type = 0) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512; canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    
+    if (type === 0) { // Lush Green
+        ctx.fillStyle = '#4a7c2c';
+    } else if (type === 1) { // Dry/Dirt
+        ctx.fillStyle = '#8b7355';
+    } else if (type === 2) { // Mossy/Dark
+        ctx.fillStyle = '#2d4c1e';
+    } else { // Sandy/Light
+        ctx.fillStyle = '#c2b280';
+    }
+    
+    ctx.fillRect(0, 0, 512, 512);
+    for(let i=0; i<20000; i++) {
+        if (type === 0) ctx.fillStyle = `rgba(20, ${40 + Math.random()*60}, 10, ${0.1 + Math.random()*0.3})`;
+        else if (type === 1) ctx.fillStyle = `rgba(${100 + Math.random()*40}, ${80 + Math.random()*30}, 50, 0.2)`;
+        else if (type === 2) ctx.fillStyle = `rgba(10, ${30 + Math.random()*30}, 5, 0.3)`;
+        else ctx.fillStyle = `rgba(${180 + Math.random()*40}, ${160 + Math.random()*40}, 120, 0.2)`;
+        
+        ctx.fillRect(Math.random()*512, Math.random()*512, 2, 8);
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(20, 20);
+    return tex;
+}
+
+function createBarkTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256; canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#3d2b1f';
+    ctx.fillRect(0, 0, 256, 256);
+    for(let i=0; i<1000; i++) {
+        ctx.fillStyle = `rgba(60, 40, 30, ${Math.random()*0.5})`;
+        ctx.fillRect(Math.random()*256, 0, 2, 256);
+    }
+    return new THREE.CanvasTexture(canvas);
+}
+
+function createEyeTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128; canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#cc0000';
+    ctx.fillRect(0, 0, 128, 128);
+    ctx.strokeStyle = '#660000';
+    ctx.lineWidth = 1;
+    const size = 8;
+    for(let y=0; y<128; y+=size*1.5) {
+        for(let x=0; x<128; x+=size*Math.sqrt(3)) {
+            const offset = (Math.floor(y/(size*1.5)) % 2) * (size*Math.sqrt(3)/2);
+            ctx.beginPath();
+            for(let i=0; i<6; i++) {
+                const angle = i * Math.PI / 3;
+                const px = x + offset + size * Math.cos(angle);
+                const py = y + size * Math.sin(angle);
+                if(i===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+            }
+            ctx.closePath(); ctx.stroke();
+        }
+    }
+    return new THREE.CanvasTexture(canvas);
+}
+
+const obstacles = [];
+const foodItems = [];
+const waterItems = [];
+const flowerItems = [];
+const dustParticles = [];
+
+function buildStylizedEnvironment() {
+    // Atmospheric Sky
+    const skyGeo = new THREE.SphereGeometry(800, 32, 32);
+    const skyMat = new THREE.ShaderMaterial({
+        uniforms: {
+            topColor: { value: new THREE.Color(0x87ceeb) },
+            bottomColor: { value: new THREE.Color(0xffffff) },
+            offset: { value: 33 },
+            exponent: { value: 0.6 }
+        },
+        vertexShader: `
+            varying vec3 vWorldPosition;
+            void main() {
+                vec4 worldPosition = modelMatrix * vec4( position, 1.0 );
+                vWorldPosition = worldPosition.xyz;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+            }
+        `,
+        fragmentShader: `
+            uniform vec3 topColor;
+            uniform vec3 bottomColor;
+            uniform float offset;
+            uniform float exponent;
+            varying vec3 vWorldPosition;
+            void main() {
+                float h = normalize( vWorldPosition + offset ).y;
+                gl_FragColor = vec4( mix( bottomColor, topColor, max( pow( max( h, 0.0 ), exponent ), 0.0 ) ), 1.0 );
+            }
+        `,
+        side: THREE.BackSide
+    });
+    const sky = new THREE.Mesh(skyGeo, skyMat);
+    scene.add(sky);
+
+    scene.fog = new THREE.FogExp2(0xdce5e8, 0.0015);
+
+    // Uniform Ground (Matching Image)
+    const groundGeo = new THREE.PlaneGeometry(MAP_RADIUS * 3, MAP_RADIUS * 3);
+    const groundMat = new THREE.MeshStandardMaterial({ 
+        color: 0xefead2, // Light tan/beige like the image
+        roughness: 0.9, 
+        metalness: 0.0 
+    });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // Smooth Green Hills (Matching Image)
+    const hillMat = new THREE.MeshStandardMaterial({ color: 0x2d5a27, roughness: 0.8 });
+    for(let i=0; i<12; i++) {
+        const hillGeo = new THREE.SphereGeometry(30 + Math.random()*40, 32, 16);
+        const hill = new THREE.Mesh(hillGeo, hillMat);
+        const angle = (i / 12) * Math.PI * 2;
+        const dist = MAP_RADIUS * 0.8 + Math.random() * 50;
+        hill.position.set(Math.cos(angle) * dist, -10, Math.sin(angle) * dist);
+        hill.scale.y = 0.3;
+        scene.add(hill);
+    }
+
+    // Water Bodies (Ponds)
+    const waterGeo = new THREE.CircleGeometry(15, 32);
+    const waterMat = new THREE.MeshStandardMaterial({ color: 0x44aaff, transparent: true, opacity: 0.7, roughness: 0, metalness: 0.3 });
+    for (let i = 0; i < 3; i++) {
+        const pond = new THREE.Mesh(waterGeo, waterMat);
+        const px = (Math.random() - 0.5) * MAP_RADIUS;
+        const pz = (Math.random() - 0.5) * MAP_RADIUS;
+        pond.position.set(px, 0.05, pz);
+        pond.rotation.x = -Math.PI / 2;
+        scene.add(pond);
+        waterItems.push({ x: px, z: pz, radius: 15 });
+    }
+
+    // Flowers
+    const flowerColors = [0xff0000, 0xffff00, 0xff00ff, 0xffffff];
+    for (let i = 0; i < 60; i++) {
+        const fx = (Math.random() - 0.5) * MAP_RADIUS * 1.5;
+        const fz = (Math.random() - 0.5) * MAP_RADIUS * 1.5;
+        if (Math.hypot(fx, fz) > MAP_RADIUS) continue;
+
+        const flower = new THREE.Group();
+        const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.5), new THREE.MeshStandardMaterial({ color: 0x228b22 }));
+        stem.position.y = 0.75;
+        flower.add(stem);
+
+        const petalMat = new THREE.MeshStandardMaterial({ color: flowerColors[Math.floor(Math.random() * flowerColors.length)] });
+        for (let j = 0; j < 5; j++) {
+            const petal = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 8), petalMat);
+            petal.scale.set(1, 0.2, 1.5);
+            petal.position.y = 1.5;
+            petal.rotation.y = (j / 5) * Math.PI * 2;
+            petal.position.x = Math.sin(petal.rotation.y) * 0.4;
+            petal.position.z = Math.cos(petal.rotation.y) * 0.4;
+            flower.add(petal);
+        }
+        flower.position.set(fx, 0, fz);
+        scene.add(flower);
+        flowerItems.push({ x: fx, z: fz, radius: 1 });
+    }
+
+    // Distant Mountains
+    const mountainMat = new THREE.MeshStandardMaterial({ color: 0x556677, roughness: 0.9 });
+    for(let i=0; i<8; i++) {
+        const angle = (i / 8) * Math.PI * 2;
+        const dist = 450 + Math.random() * 100;
+        const mX = Math.cos(angle) * dist;
+        const mZ = Math.sin(angle) * dist;
+        const mHeight = 80 + Math.random() * 120;
+        const mGeo = new THREE.ConeGeometry(100 + Math.random()*100, mHeight, 4);
+        const mountain = new THREE.Mesh(mGeo, mountainMat);
+        mountain.position.set(mX, mHeight/2 - 10, mZ);
+        mountain.rotation.y = Math.random() * Math.PI;
+        mountain.castShadow = true; mountain.receiveShadow = true;
+        scene.add(mountain);
+    }
+
+    const ringGeo = new THREE.RingGeometry(MAP_RADIUS - 2, MAP_RADIUS, 64);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0x34d399, side: THREE.DoubleSide, opacity: 0.3, transparent: true });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI/2; ring.position.y = 0.5;
+    scene.add(ring);
+
+    // Realistic Rocks
+    const rockMat = new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.8 });
+    for(let i=0; i<80; i++) {
+        const rX = (Math.random() - 0.5) * (MAP_RADIUS * 1.8);
+        const rZ = (Math.random() - 0.5) * (MAP_RADIUS * 1.8);
+        if(Math.hypot(rX, rZ) < 30 || Math.hypot(rX, rZ) > MAP_RADIUS - 15) continue; 
+        
+        const rockGeo = new THREE.IcosahedronGeometry(1, 1);
+        const rock = new THREE.Mesh(rockGeo, rockMat);
+        const s = 1 + Math.random()*3;
+        rock.scale.set(s * (1+Math.random()), s * (0.5+Math.random()*0.5), s * (1+Math.random()));
+        rock.position.set(rX, rock.scale.y * 0.5, rZ);
+        rock.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+        rock.castShadow = true; rock.receiveShadow = true;
+        scene.add(rock);
+        obstacles.push({ x: rX, z: rZ, radius: s * 1.5 });
+    }
+
+    // Realistic Trees
+    const barkTex = createBarkTexture();
+    const trunkMat = new THREE.MeshStandardMaterial({ map: barkTex, roughness: 0.9 }); 
+    const leafColors = [0x2d4c1e, 0x3a5a2a, 0x4a6a3a];
+
+    for(let i=0; i<45; i++) {
+        const rX = (Math.random() - 0.5) * (MAP_RADIUS * 1.8);
+        const rZ = (Math.random() - 0.5) * (MAP_RADIUS * 1.8);
+        if(Math.hypot(rX, rZ) < 50 || Math.hypot(rX, rZ) > MAP_RADIUS - 20) continue;
+
+        const tree = new THREE.Group();
+        const h = 8 + Math.random() * 6;
+        const trunkGeo = new THREE.CylinderGeometry(0.5, 0.8, h, 8);
+        const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+        trunk.position.y = h/2; trunk.castShadow = true; trunk.receiveShadow = true;
+        tree.add(trunk);
+
+        const leafMat = new THREE.MeshStandardMaterial({ 
+            color: leafColors[Math.floor(Math.random() * leafColors.length)],
+            roughness: 0.8
+        });
+        
+        for(let j=0; j<3; j++) {
+            const lSize = (3 - j) * 2;
+            const lGeo = new THREE.ConeGeometry(lSize, 5, 8);
+            const leaves = new THREE.Mesh(lGeo, leafMat);
+            leaves.position.y = h * 0.6 + j * 3;
+            leaves.castShadow = true; leaves.receiveShadow = true;
+            tree.add(leaves);
+        }
+
+        tree.position.set(rX, 0, rZ);
+        scene.add(tree);
+        obstacles.push({ x: rX, z: rZ, radius: 2.5 });
+    }
+}
+
+const CAM_MODES = [
+    { name: "Peeche Se (Follow)", type: "offset", val: new THREE.Vector3(0, 5, -12) },
+    { name: "Side Se (Side View)", type: "offset", val: new THREE.Vector3(-12, 4, 0) },
+    { name: "Aankhon Se (POV)", type: "pov", val: new THREE.Vector3(0, 1.8, 2.5) }, 
+    { name: "Upar Se (Top Map)", type: "map", val: new THREE.Vector3(0, 250, 0) }, 
+    { name: "Tircha View (Iso Map)", type: "map", val: new THREE.Vector3(-180, 150, -180) }, 
+    { name: "Zameen Se (Low Map)", type: "map_low", val: new THREE.Vector3(0, 8, -100) }, 
+    { name: "Door Se (Wide Map)", type: "map", val: new THREE.Vector3(-180, 120, -180) },
+    { name: "Cinematic Orbit", type: "map", val: new THREE.Vector3(100, 60, 100) },
+    { name: "High Altitude", type: "map", val: new THREE.Vector3(0, 400, 0) },
+    { name: "Survey View", type: "map", val: new THREE.Vector3(200, 100, 0) },
+    { name: "Aapka Control (Free Cam)", type: "free", val: null } 
+];
+let currentCamIdx = 0;
+let activeCamOffset = CAM_MODES[0].val.clone();
+let activeCamLookAt = new THREE.Vector3();
+
+// --- FLY MODEL (FIXED LEGS DIRECTION) ---
+class StylizedFly {
+    constructor() {
+        this.mesh = new THREE.Group();
+        this.position = new THREE.Vector3(0, 0, 0);
+        this.rotation = 0; 
+        
+        this.currentSpeed = 0;
+        this.currentTurnRate = 0;
+        
+        const bodyMat = new THREE.MeshStandardMaterial({ 
+            color: 0x6d4c41, // Brownish body like the image
+            roughness: 0.7, 
+            metalness: 0.0 
+        }); 
+        const eyeMat = new THREE.MeshStandardMaterial({ color: 0xd32f2f, roughness: 0.3 }); // Red eyes like the image
+        const stripeMat = new THREE.MeshStandardMaterial({ color: 0x4e342e, roughness: 0.7 }); 
+        const wingMat = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.2, side: THREE.DoubleSide, roughness: 0.1 });
+        const legMat = new THREE.MeshStandardMaterial({ color: 0x3e2723, roughness: 0.8 }); 
+
+        this.thorax = new THREE.Mesh(new THREE.SphereGeometry(1.0, 16, 16), bodyMat);
+        this.thorax.scale.set(1, 0.9, 1.3); this.thorax.position.y = 1.4; this.thorax.castShadow = true;
+        this.mesh.add(this.thorax);
+
+        this.abdomenGroup = new THREE.Group(); this.abdomenGroup.position.set(0, 1.2, -1.6);
+        const abdomenMain = new THREE.Mesh(new THREE.SphereGeometry(1.0, 16, 16), bodyMat);
+        abdomenMain.scale.set(0.9, 0.8, 1.6); abdomenMain.castShadow = true; this.abdomenGroup.add(abdomenMain);
+
+        const stripeGeo = new THREE.CylinderGeometry(0.95, 0.95, 0.15, 16);
+        for(let i=0; i<3; i++) {
+            const stripe = new THREE.Mesh(stripeGeo, stripeMat);
+            stripe.rotation.x = Math.PI / 2; stripe.position.set(0, 0, -0.4 + (i * 0.5));
+            stripe.scale.set(0.95, 1, 1.1 - (i*0.1)); this.abdomenGroup.add(stripe);
+        }
+        this.mesh.add(this.abdomenGroup);
+
+        this.head = new THREE.Group(); this.head.position.set(0, 1.4, 1.2); this.mesh.add(this.head);
+        const headBase = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 16), bodyMat);
+        headBase.scale.set(1.2, 0.9, 0.8); headBase.castShadow = true; this.head.add(headBase);
+
+        const eyeGeo = new THREE.SphereGeometry(0.5, 16, 16);
+        const leftEye = new THREE.Mesh(eyeGeo, eyeMat); leftEye.position.set(0.6, 0.2, 0.1); leftEye.scale.set(0.8, 1.4, 1.1); this.head.add(leftEye);
+        const rightEye = new THREE.Mesh(eyeGeo, eyeMat); rightEye.position.set(-0.6, 0.2, 0.1); rightEye.scale.set(0.8, 1.4, 1.1); this.head.add(rightEye);
+
+        this.proboscis = new THREE.Group(); this.proboscis.position.set(0, -0.5, 0.4); this.proboscis.rotation.x = Math.PI / 6; this.head.add(this.proboscis);
+        const probBase = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.8), bodyMat);
+        this.proboscis.add(probBase);
+        const labellum = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), bodyMat);
+        labellum.position.y = -0.4; labellum.scale.set(1.5, 0.5, 1.5);
+        this.proboscis.add(labellum);
+
+        const wingShape = new THREE.Shape();
+        wingShape.moveTo(0, 0); wingShape.quadraticCurveTo(0.5, 1.5, 0.4, 3.5);
+        wingShape.quadraticCurveTo(0, 4.0, -0.4, 3.5); wingShape.quadraticCurveTo(-0.5, 1.5, 0, 0);
+        
+        const wingGeoObj = new THREE.ExtrudeGeometry(wingShape, { depth: 0.02, bevelEnabled: false }); wingGeoObj.center();
+
+        this.leftWingPivot = new THREE.Group(); this.leftWingPivot.position.set(0.2, 2.1, -0.5); 
+        const lWing = new THREE.Mesh(wingGeoObj, wingMat); lWing.rotation.x = Math.PI / 2; lWing.position.set(0, 0, -1.8);
+        this.leftWingPivot.add(lWing); this.mesh.add(this.leftWingPivot);
+
+        this.rightWingPivot = new THREE.Group(); this.rightWingPivot.position.set(-0.2, 2.1, -0.5);
+        const rWing = new THREE.Mesh(wingGeoObj, wingMat); rWing.rotation.x = Math.PI / 2; rWing.position.set(0, 0, -1.8);
+        this.rightWingPivot.add(rWing); this.mesh.add(this.rightWingPivot);
+
+        this.leftWingPivot.rotation.set(0.1, 0.05, 0); this.rightWingPivot.rotation.set(0.1, -0.05, 0);
+
+        // --- FIXED REALISTIC LEGS ---
+        this.legs = [];
+        const legOffsets = [
+            { x: 0.7, y: 1.2, z: 0.6 }, { x: -0.7, y: 1.2, z: 0.6 }, 
+            { x: 0.8, y: 1.2, z: -0.2 }, { x: -0.8, y: 1.2, z: -0.2 },
+            { x: 0.6, y: 1.2, z: -1.0 }, { x: -0.6, y: 1.2, z: -1.0 } 
+        ];
+
+        legOffsets.forEach((pos, index) => {
+            const coxa = new THREE.Group(); coxa.position.set(pos.x, pos.y, pos.z);
+            // Femur goes down from the body slightly
+            const femur = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.03, 0.8), legMat); 
+            femur.position.y = 0.4;
+            
+            const tibiaGroup = new THREE.Group(); tibiaGroup.position.y = 0.8;
+            // Tibia goes further down to touch ground
+            const tibia = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.015, 1.8), legMat); 
+            tibia.position.y = 0.9;
+            tibiaGroup.add(tibia); coxa.add(femur); coxa.add(tibiaGroup);
+            
+            const isRight = pos.x > 0;
+            // FIX: Match the signs so knees bend correctly downwards towards ground
+            // -Math.PI/2.2 points it out and slightly down.
+            // -Math.PI/2.5 adds to it to point the foot down to the ground.
+            coxa.rotation.z = isRight ? -Math.PI/2.2 : Math.PI/2.2;
+            tibiaGroup.rotation.z = isRight ? -Math.PI/2.5 : Math.PI/2.5; 
+            
+            if(index < 2) coxa.rotation.x = -Math.PI/6; // Front pointing forward
+            else if(index > 3) coxa.rotation.x = Math.PI/4;  // Back pointing backward
+            else coxa.rotation.x = Math.PI/12; // Middle slightly back
+
+            this.mesh.add(coxa);
+            this.legs.push({ base: coxa, knee: tibiaGroup, isRight, isFront: index < 2, isHind: index > 3 });
+        });
+
+        scene.add(this.mesh);
+        this.walkCycle = 0; this.wingBuzz = 0; this.groomCycle = 0; this.groomType = 0; 
+    }
+
+    animateWings(speed, time) {
+        if (speed > 0) {
+            this.wingBuzz += 12.0 * (speed + 0.2); 
+            this.leftWingPivot.rotation.z = Math.sin(this.wingBuzz) * 1.2;
+            this.rightWingPivot.rotation.z = -Math.sin(this.wingBuzz) * 1.2;
+            this.leftWingPivot.rotation.x = 0.2; this.rightWingPivot.rotation.x = 0.2;
+            this.leftWingPivot.rotation.y = 0.5; this.rightWingPivot.rotation.y = -0.5;
+        } else {
+            this.leftWingPivot.rotation.set(0.1, 0.05, 0);
+            this.rightWingPivot.rotation.set(0.1, -0.05, 0);
+        }
+    }
+
+    animateWalk(speed) {
+        if (speed < 0.05) return;
+        this.walkCycle += speed * 3.5; 
+        this.legs.forEach((leg, i) => {
+            const phase = (i === 0 || i === 3 || i === 4) ? 0 : Math.PI;
+            const stepMod = (this.walkCycle + phase) % (Math.PI * 2);
+            let swing = 0, lift = 0;
+            
+            if (stepMod < Math.PI) {
+                swing = Math.sin(stepMod) * 0.5; lift = Math.sin(stepMod) * 0.4; 
+            } else {
+                swing = -Math.sin(stepMod - Math.PI) * 0.2; lift = 0;
+            }
+            leg.base.rotation.x = (leg.isFront ? -Math.PI/6 : (leg.isHind ? Math.PI/4 : Math.PI/12)) + swing;
+            leg.base.position.y = 1.2 + lift;
+        });
+        
+        this.thorax.position.y = 1.4 + Math.abs(Math.sin(this.walkCycle * 2)) * 0.05;
+        this.head.rotation.x += Math.sin(this.walkCycle * 2) * 0.02; // Head bobbing
+        this.mesh.rotation.x = speed * 0.1; 
+    }
+
+    animateGroom(time) {
+        this.groomCycle += 0.35; 
+        if (this.groomType === 0) {
+            // Front face grooming
+            const fr = this.legs[0], fl = this.legs[1];
+            fr.base.rotation.set(Math.PI/4 + Math.cos(this.groomCycle)*0.4, 0, -Math.PI/4 + Math.sin(this.groomCycle*2)*0.2);
+            fr.knee.rotation.z = -Math.PI/1.2 + Math.cos(this.groomCycle)*0.2; // Fixed: Negative for right knee
+            
+            fl.base.rotation.set(Math.PI/4 + Math.cos(this.groomCycle)*0.4, 0, Math.PI/4 - Math.sin(this.groomCycle*2)*0.2);
+            fl.knee.rotation.z = Math.PI/1.2 - Math.cos(this.groomCycle)*0.2; // Fixed: Positive for left knee
+            
+            this.head.rotation.x = Math.PI/5 + Math.sin(this.groomCycle)*0.1;
+            this.proboscis.scale.y = 1.2 + Math.sin(this.groomCycle*2)*0.1; 
+            this.thorax.position.y = 1.3;
+        } else {
+            // Hind wing grooming
+            const hr = this.legs[4], hl = this.legs[5];
+            hr.base.rotation.set(-Math.PI/4 + Math.cos(this.groomCycle)*0.3, 0, -Math.PI/4 + Math.sin(this.groomCycle)*0.2);
+            hr.knee.rotation.z = -Math.PI/1.5 + Math.sin(this.groomCycle)*0.2; // Fixed
+            
+            hl.base.rotation.set(-Math.PI/4 + Math.cos(this.groomCycle)*0.3, 0, Math.PI/4 - Math.sin(this.groomCycle)*0.2);
+            hl.knee.rotation.z = Math.PI/1.5 - Math.sin(this.groomCycle)*0.2; // Fixed
+            
+            this.abdomenGroup.rotation.x = Math.sin(this.groomCycle*2)*0.08;
+            this.leftWingPivot.rotation.z = 0.2 + Math.sin(this.groomCycle)*0.05;
+            this.rightWingPivot.rotation.z = -0.2 - Math.sin(this.groomCycle)*0.05;
+        }
+    }
+
+    resetPosture() {
+        this.head.rotation.x += (0 - this.head.rotation.x) * 0.2;
+        this.proboscis.scale.y += (1 - this.proboscis.scale.y) * 0.2;
+        this.proboscis.position.y += (-0.5 - this.proboscis.position.y) * 0.2;
+        this.thorax.position.y += (1.4 - this.thorax.position.y) * 0.2;
+        this.abdomenGroup.rotation.x *= 0.8;
+        
+        this.mesh.rotation.x *= 0.8; this.mesh.rotation.z *= 0.8; 
+
+        // Fixed base and knee rotations here too
+        this.legs.forEach((leg, i) => {
+            leg.base.position.y += (1.2 - leg.base.position.y) * 0.3;
+            leg.base.rotation.x += ((leg.isFront ? -Math.PI/6 : (leg.isHind ? Math.PI/4 : Math.PI/12)) - leg.base.rotation.x) * 0.3;
+            leg.base.rotation.z += ((leg.isRight ? -Math.PI/2.2 : Math.PI/2.2) - leg.base.rotation.z) * 0.3;
+            leg.knee.rotation.z += ((leg.isRight ? -Math.PI/2.5 : Math.PI/2.5) - leg.knee.rotation.z) * 0.3;
+        });
+    }
+
+    animateEat(time) {
+        this.proboscis.scale.y = 2.0; 
+        this.proboscis.position.y = -1.0;
+        this.head.rotation.x = Math.PI / 5; 
+        this.thorax.position.y = 1.3 + Math.sin(time*25)*0.02; 
+    }
+
+    animateDrink(time) {
+        this.proboscis.scale.y = 1.8;
+        this.proboscis.position.y = -0.8;
+        this.head.rotation.x = Math.PI / 4;
+        this.thorax.position.y = 1.25 + Math.sin(time*10)*0.01;
+    }
+
+    animateSleep(time) {
+        this.head.rotation.x = -0.2;
+        this.thorax.position.y = 1.1;
+        this.legs.forEach(leg => {
+            leg.base.rotation.x *= 0.9;
+            leg.knee.rotation.z *= 0.9;
+        });
+    }
+
+    animateFlyPos(isFlying, turnRate, thrust, time) {
+        const targetY = isFlying ? 8 + Math.sin(time*15)*0.6 : 0; 
+        this.position.y += (targetY - this.position.y) * 0.15;
+        
+        const targetPitch = isFlying ? thrust * 0.3 : 0; 
+        const targetRoll = isFlying ? -turnRate * 1.5 : 0; 
+        
+        this.mesh.rotation.x += (targetPitch - this.mesh.rotation.x) * 0.15;
+        this.mesh.rotation.z += (targetRoll - this.mesh.rotation.z) * 0.15;
+
+        // Tuck legs slightly underneath when flying
+        if (isFlying && this.position.y > 2) {
+            this.legs.forEach(leg => {
+                leg.base.rotation.x += (0 - leg.base.rotation.x) * 0.2;
+                leg.base.rotation.z += ((leg.isRight ? -Math.PI/4 : Math.PI/4) - leg.base.rotation.z) * 0.2;
+                leg.knee.rotation.z += ((leg.isRight ? -Math.PI/1.2 : Math.PI/1.2) - leg.knee.rotation.z) * 0.2;
+            });
+        }
+    }
+
+    updateCamera() {
+        const mode = CAM_MODES[currentCamIdx];
+        
+        if (mode.type === 'free') {
+            controls.update(); 
+            const dist = Math.hypot(camera.position.x, camera.position.z);
+            if (dist > MAP_RADIUS + 50) { 
+                const angle = Math.atan2(camera.position.z, camera.position.x);
+                camera.position.x = Math.cos(angle) * (MAP_RADIUS + 50);
+                camera.position.z = Math.sin(angle) * (MAP_RADIUS + 50);
+            }
+            const tDist = Math.hypot(controls.target.x, controls.target.z);
+            if (tDist > MAP_RADIUS - 10) { 
+                const angle = Math.atan2(controls.target.z, controls.target.x);
+                controls.target.x = Math.cos(angle) * (MAP_RADIUS - 10);
+                controls.target.z = Math.sin(angle) * (MAP_RADIUS - 10);
+            }
+            activeCamOffset.copy(camera.position).sub(this.position);
+            activeCamLookAt.copy(controls.target);
+            return; 
+        }
+
+        const lerpSpeed = mode.type.startsWith('map') ? 0.05 : 0.08; 
+        let idealPos = new THREE.Vector3();
+        let targetLookAt = new THREE.Vector3(this.position.x, this.position.y + 1.0, this.position.z);
+
+        if (mode.type === 'offset') {
+            activeCamOffset.lerp(mode.val, lerpSpeed);
+            idealPos.copy(activeCamOffset);
+            idealPos.applyAxisAngle(new THREE.Vector3(0,1,0), this.rotation);
+            idealPos.add(this.position);
+        } 
+        else if (mode.type === 'pov') {
+            idealPos.copy(this.position);
+            const headOffset = mode.val.clone(); // Use mode.val instead of hardcoded
+            headOffset.applyAxisAngle(new THREE.Vector3(0,1,0), this.rotation);
+            idealPos.add(headOffset);
+            
+            const fwd = new THREE.Vector3(0, 0, 10);
+            fwd.applyAxisAngle(new THREE.Vector3(0,1,0), this.rotation);
+            targetLookAt.copy(idealPos).add(fwd);
+            targetLookAt.y -= 1.0; // Look slightly more forward
+        }
+        else if (mode.type === 'map') {
+            activeCamOffset.lerp(mode.val, lerpSpeed);
+            idealPos.copy(activeCamOffset);
+            idealPos.add(this.position); 
+        }
+        else if (mode.type === 'map_low') {
+            activeCamOffset.lerp(mode.val, lerpSpeed);
+            idealPos.copy(activeCamOffset);
+            idealPos.applyAxisAngle(new THREE.Vector3(0,1,0), this.rotation);
+            idealPos.add(this.position);
+            targetLookAt.copy(this.position); 
+        }
+
+        activeCamLookAt.lerp(targetLookAt, lerpSpeed);
+        camera.position.lerp(idealPos, lerpSpeed);
+        camera.lookAt(activeCamLookAt);
+    }
+}
+
+// --- AUTO SPAWNING SYSTEMS (Food & Dust) ---
+function spawnBananaSlice(isAuto = false) {
+    if (foodItems.length >= 6) return; 
+
+    const bananaGroup = new THREE.Group();
+    const peel = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 0.4, 32), new THREE.MeshLambertMaterial({ color: 0xffe135 }));
+    const flesh = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 0.42, 32), new THREE.MeshLambertMaterial({ color: 0xfff4b0 }));
+    const seedMat = new THREE.MeshBasicMaterial({ color: 0x887733 });
+    const seed1 = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.1), seedMat); seed1.rotation.x = -Math.PI/2; seed1.position.y = 0.22;
+    const seed2 = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.8), seedMat); seed2.rotation.x = -Math.PI/2; seed2.position.y = 0.22;
+    bananaGroup.add(peel, flesh, seed1, seed2);
+
+    let bx, bz;
+    if (isAuto) {
+        let r = Math.random() * SAFE_RADIUS; 
+        let theta = Math.random() * Math.PI * 2;
+        bx = Math.cos(theta) * r;
+        bz = Math.sin(theta) * r;
+    } else {
+        let angle = fly.rotation;
+        let dist = 10 + Math.random() * 5;
+        bx = fly.position.x + Math.sin(angle) * dist;
+        bz = fly.position.z + Math.cos(angle) * dist;
+        if (Math.hypot(bx, bz) > MAP_RADIUS - 10) {
+            bx = fly.position.x - Math.sin(angle) * dist;
+            bz = fly.position.z - Math.cos(angle) * dist;
+        }
+    }
+
+    bananaGroup.position.set(bx, 0.2, bz);
+    bananaGroup.rotation.y = Math.random() * Math.PI;
+    bananaGroup.castShadow = true;
+    scene.add(bananaGroup);
+    foodItems.push({mesh: bananaGroup});
+}
+
+function spawnVirtualDust(isAuto = false) {
+    let spawnX, spawnZ;
+    if (isAuto) {
+        let r = Math.random() * (MAP_RADIUS - 20); 
+        let theta = Math.random() * Math.PI * 2;
+        spawnX = Math.cos(theta) * r;
+        spawnZ = Math.sin(theta) * r;
+    } else {
+        spawnX = fly.position.x;
+        spawnZ = fly.position.z;
+    }
+
+    const geo = new THREE.SphereGeometry(0.06, 4, 4);
+    const mat = new THREE.MeshBasicMaterial({ color: 0x9ca3af });
+    for(let i=0; i<30; i++) {
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(spawnX + (Math.random()-0.5)*10, 3 + Math.random()*5, spawnZ + (Math.random()-0.5)*10);
+        scene.add(mesh);
+        dustParticles.push({ mesh, vy: -0.05 - Math.random()*0.1 });
+    }
+
+    if (Math.hypot(spawnX - fly.position.x, spawnZ - fly.position.z) < 25) {
+        brain.triggerDust(40);
+    }
+}
+
+setInterval(() => { spawnBananaSlice(true); }, 15000); 
+setInterval(() => { spawnVirtualDust(true); }, 20000);  
+
+// --- NEURON LOGIC (CONNECTOME) ---
+class BrainEngine {
+    constructor(body) {
+        this.body = body;
+        this.hunger = 20;  
+        this.energy = 100; 
+        this.thirst = 0;
+        this.sleepiness = 0;
+        this.dustLevel = 0; 
+        this.curiosity = 50;
+        this.state = 'SOCH RAHI HAI (THINKING)'; 
+        
+        this.age = 0;
+        this.maxAge = 10000; 
+        this.fatigue = 0;
+        this.learning = 0;
+        this.knowledge = {
+            obstacleAvoidance: 0.1,
+            foodFinding: 0.1,
+            waterFinding: 0.1
+        };
+        
+        this.sensors = { 
+            food_dist: Infinity, food_angle: 0, 
+            water_dist: Infinity, water_angle: 0,
+            flower_dist: Infinity, flower_angle: 0,
+            obs_dist: Infinity, obs_angle: 0, 
+            startle: false, dist_from_center: 0 
+        };
+        this.motors = { thrust: 0, turn: 0, fly: false, eat: false, drink: false, sleep: false, groom: false };
+        
+        this.wanderTimer = 0;
+        this.isDarting = false;
+        this.stuckTimer = 0;
+        this.neuralNoise = 0;
+        this.memory = []; 
+        this.neuralActivity = new Array(140).fill(0).map(() => Math.random());
+        
+        // Reinforcement Learning / Plasticity
+        this.weights = {
+            hunger_to_food: 1.0,
+            thirst_to_water: 1.0,
+            caution: 1.0,
+            curiosity: 1.0
+        };
+        this.experience = 0;
+        this.stuckCount = 0;
+    }
+
+    triggerStartle() { this.sensors.startle = true; setTimeout(() => { this.sensors.startle = false; }, 1000); }
+    triggerDust(amount) { this.dustLevel = Math.min(100, this.dustLevel + amount); }
+
+    evaluateEnvironment() {
+        // Food
+        let nearestDist = Infinity;
+        let nearestFood = null;
+        foodItems.forEach(item => {
+            const dist = this.body.position.distanceTo(item.mesh.position);
+            if (dist < nearestDist) { nearestDist = dist; nearestFood = item; }
+        });
+        this.sensors.food_dist = nearestDist;
+        if (nearestFood) {
+            const dx = nearestFood.mesh.position.x - this.body.position.x;
+            const dz = nearestFood.mesh.position.z - this.body.position.z;
+            this.sensors.food_angle = Math.atan2(dx, dz); 
+        }
+
+        // Water
+        let nearestWaterDist = Infinity;
+        let nearestWaterAngle = 0;
+        waterItems.forEach(item => {
+            const dist = Math.hypot(this.body.position.x - item.x, this.body.position.z - item.z);
+            if (dist < nearestWaterDist) {
+                nearestWaterDist = dist;
+                nearestWaterAngle = Math.atan2(item.x - this.body.position.x, item.z - this.body.position.z);
+            }
+        });
+        this.sensors.water_dist = nearestWaterDist;
+        this.sensors.water_angle = nearestWaterAngle;
+
+        // Flowers
+        let nearestFlowerDist = Infinity;
+        let nearestFlowerAngle = 0;
+        flowerItems.forEach(item => {
+            const dist = Math.hypot(this.body.position.x - item.x, this.body.position.z - item.z);
+            if (dist < nearestFlowerDist) {
+                nearestFlowerDist = dist;
+                nearestFlowerAngle = Math.atan2(item.x - this.body.position.x, item.z - this.body.position.z);
+            }
+        });
+        this.sensors.flower_dist = nearestFlowerDist;
+        this.sensors.flower_angle = nearestFlowerAngle;
+
+        // Raycasting for realistic obstacle detection
+        const raycaster = new THREE.Raycaster();
+        const directions = [
+            new THREE.Vector3(0, 0, 1), // Forward
+            new THREE.Vector3(0.5, 0, 0.866), // Forward-Right
+            new THREE.Vector3(-0.5, 0, 0.866), // Forward-Left
+            new THREE.Vector3(1, 0, 0), // Right
+            new THREE.Vector3(-1, 0, 0) // Left
+        ];
+        
+        let minObsDist = Infinity;
+        let bestDir = 0;
+
+        directions.forEach((dir, i) => {
+            const worldDir = dir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), this.body.rotation);
+            raycaster.set(this.body.position, worldDir);
+            const intersects = raycaster.intersectObjects(scene.children, true);
+            
+            // Filter out self and ground
+            const validIntersects = intersects.filter(hit => hit.object !== this.body.mesh && hit.distance > 0.1 && hit.point.y > 0.5);
+            
+            if (validIntersects.length > 0) {
+                const dist = validIntersects[0].distance;
+                if (dist < minObsDist) {
+                    minObsDist = dist;
+                    bestDir = i;
+                }
+            }
+        });
+
+        this.sensors.obs_dist = minObsDist;
+        this.sensors.obs_dir_idx = bestDir; // 0=F, 1=FR, 2=FL, 3=R, 4=L
+
+        this.sensors.dist_from_center = Math.hypot(this.body.position.x, this.body.position.z);
+
+        this.hunger = Math.min(100, this.hunger + 0.03);
+        this.thirst = Math.min(100, this.thirst + 0.05);
+        this.sleepiness = Math.min(100, this.sleepiness + 0.02);
+        this.energy = Math.max(0, this.energy - (this.motors.fly ? 0.15 : 0.02));
+        this.fatigue = Math.min(100, this.fatigue + (this.motors.fly ? 0.1 : 0.01));
+        this.age += 1;
+        this.curiosity = Math.max(0, this.curiosity - 0.01);
+        
+        if (this.motors.eat) {
+            this.hunger = Math.max(0, this.hunger - 1.0);
+            this.knowledge.foodFinding = Math.min(1.0, this.knowledge.foodFinding + 0.001);
+        }
+        if (this.motors.drink) {
+            this.thirst = Math.max(0, this.thirst - 1.5);
+            this.knowledge.waterFinding = Math.min(1.0, this.knowledge.waterFinding + 0.001);
+        }
+        if (this.motors.sleep) {
+            this.sleepiness = Math.max(0, this.sleepiness - 0.5);
+            this.energy = Math.min(100, this.energy + 0.3);
+            this.fatigue = Math.max(0, this.fatigue - 0.2);
+        }
+        
+        this.learning = (this.knowledge.obstacleAvoidance + this.knowledge.foodFinding + this.knowledge.waterFinding) / 3 * 100;
+
+        // Learning: Experience increases over time, making weights more efficient
+        this.experience += 0.001;
+        this.weights.hunger_to_food = 1.0 - (this.knowledge.foodFinding * 0.3);
+        this.weights.thirst_to_water = 1.0 - (this.knowledge.waterFinding * 0.3);
+        
+        // Learn to be more cautious if stuck often
+        if (this.stuckTimer > 5) {
+            this.stuckCount++;
+            this.knowledge.obstacleAvoidance = Math.min(1.0, this.knowledge.obstacleAvoidance + 0.005);
+            this.weights.caution = 1.0 + this.knowledge.obstacleAvoidance;
+        }
+        
+        this.neuralNoise = (Math.random() - 0.5) * 0.08;
+        this.neuralActivity = this.neuralActivity.map(v => Math.max(0, Math.min(1, v + (Math.random() - 0.5) * 0.2)));
+    }
+
+    processNeuralCircuits() {
+        this.motors.eat = false; this.motors.groom = false; this.motors.drink = false; this.motors.sleep = false;
+
+        const updateState = (newState) => {
+            if (this.state !== newState) {
+                this.memory.push(this.state);
+                if (this.memory.length > 5) this.memory.shift();
+                this.state = newState;
+            }
+        };
+
+        // Sleepiness takes priority if very high
+        if (this.sleepiness > 90 || (this.state === 'SO RAHI HAI (SLEEPING)' && this.sleepiness > 10)) {
+            updateState('SO RAHI HAI (SLEEPING)');
+            this.motors.thrust = 0; this.motors.turn = 0; this.motors.fly = false; this.motors.sleep = true;
+            return;
+        }
+
+        // Thirst
+        if (this.thirst > 50 * this.weights.thirst_to_water) {
+            if (this.sensors.water_dist < 15) {
+                updateState('PANI PI RAHI (DRINKING)');
+                this.motors.thrust = 0; this.motors.turn = 0; this.motors.fly = false; this.motors.drink = true;
+                return;
+            } else {
+                updateState('PANI DHOOND RAHI (THIRSTY)');
+                let diff = this.sensors.water_angle - this.body.rotation;
+                while (diff < -Math.PI) diff += Math.PI * 2; while (diff > Math.PI) diff -= Math.PI * 2;
+                this.motors.turn = diff * (0.1 + this.knowledge.waterFinding * 0.2) + this.neuralNoise;
+                this.motors.thrust = 0.5;
+                this.motors.fly = this.energy > 30;
+                return;
+            }
+        }
+
+        // Fatigue/Thakan
+        if (this.fatigue > 80 || this.energy < 15) {
+            updateState('THAK GAYI (TIRED)');
+            this.motors.thrust = 0; this.motors.turn = 0; this.motors.fly = false;
+            this.energy += 0.02;
+            this.fatigue -= 0.05;
+            return;
+        }
+
+        // Boundary check
+        if (this.sensors.dist_from_center > MAP_RADIUS - 10) {
+            updateState('WAPAS AA RAHI (RETURNING)');
+            let angleToCenter = Math.atan2(-this.body.position.x, -this.body.position.z);
+            let diff = angleToCenter - this.body.rotation;
+            while (diff < -Math.PI) diff += Math.PI * 2; while (diff > Math.PI) diff -= Math.PI * 2;
+            this.motors.turn = diff * 0.2 + this.neuralNoise; 
+            this.motors.thrust = 0.5;
+            this.motors.fly = true; 
+            return;
+        }
+
+        // Stuck or Startled
+        if (this.sensors.startle || this.stuckTimer > 15) {
+            updateState('DARR KE BHAAGI (ESCAPE)');
+            this.motors.fly = true;
+            this.motors.thrust = 1.0;
+            if (this.stuckTimer > 15) {
+                // Reverse and turn if stuck - less aggressive turn to avoid spinning
+                this.motors.thrust = -0.6;
+                this.motors.turn = (Math.random() > 0.5 ? 0.6 : -0.6);
+            } else {
+                this.motors.turn = (Math.random() - 0.5) * 0.5 + this.neuralNoise;
+            }
+            if (this.stuckTimer > 40) this.stuckTimer = 0; 
+            return;
+        }
+
+        // Obstacle Avoidance using Raycasting data
+        const safetyMargin = 15.0 * this.weights.caution;
+        if (this.sensors.obs_dist < safetyMargin) {
+            updateState('BACH RAHI HAI (AVOIDING)');
+            const dir = this.sensors.obs_dir_idx;
+            const steerStrength = 0.4 + this.knowledge.obstacleAvoidance * 0.6;
+            if (dir === 0) { // Wall right in front
+                this.motors.turn = (Math.random() > 0.5 ? steerStrength : -steerStrength);
+                this.motors.thrust = -0.2; // Back up slightly
+            } else if (dir === 1 || dir === 3) { // Obstacle on right
+                this.motors.turn = -steerStrength;
+                this.motors.thrust = 0.2;
+            } else if (dir === 2 || dir === 4) { // Obstacle on left
+                this.motors.turn = steerStrength;
+                this.motors.thrust = 0.2;
+            }
+            return;
+        }
+        
+        if (this.dustLevel > 40) {
+            updateState('SAFAI KAR RAHI (GROOMING)');
+            this.motors.thrust = 0; this.motors.turn = 0; this.motors.fly = false; this.motors.groom = true;
+            this.dustLevel -= 0.6; 
+            return;
+        }
+
+        if (this.sensors.food_dist < 3.5 && this.hunger > 5) {
+            updateState('KHA RAHI HAI (EATING)');
+            this.motors.thrust = 0; this.motors.turn = 0; this.motors.fly = false; this.motors.eat = true;
+            this.hunger -= 0.8;
+            if (this.hunger <= 5) {
+                for(let i=0; i<foodItems.length; i++) {
+                    if (this.body.position.distanceTo(foodItems[i].mesh.position) < 5.0) {
+                        scene.remove(foodItems[i].mesh); foodItems.splice(i, 1); break;
+                    }
+                }
+                this.curiosity = 100; 
+            }
+            return;
+        }
+
+        if (this.sensors.food_dist < 120 && this.hunger > 25) {
+            updateState('KHANA DHOOND RAHI (HUNTING)');
+            let diff = this.sensors.food_angle - this.body.rotation;
+            while (diff < -Math.PI) diff += Math.PI * 2; while (diff > Math.PI) diff -= Math.PI * 2;
+
+            if (Math.abs(diff) > 0.1) this.motors.turn = diff * 0.15 + this.neuralNoise;
+            else this.motors.turn = this.neuralNoise;
+            
+            if (this.sensors.food_dist > 20 && this.energy > 30) {
+                this.motors.fly = true; this.motors.thrust = 0.7;
+            } else {
+                this.motors.fly = false; this.motors.thrust = 0.4; 
+            }
+            return;
+        }
+
+        if (this.curiosity < 20) {
+            updateState('NAYI JAGAH DHOOND RAHI (EXPLORING)');
+            this.motors.fly = Math.random() < 0.3;
+            this.motors.thrust = 0.5;
+            this.motors.turn = (Math.random() - 0.5) * 0.8 + this.neuralNoise;
+            this.curiosity += 0.5;
+            return;
+        }
+
+        this.motors.fly = false;
+        this.wanderTimer--;
+        
+        if (this.wanderTimer <= 0) {
+            this.isDarting = !this.isDarting; 
+            if (this.isDarting) {
+                updateState('TEZ CHAL RAHI (DARTING)');
+                this.motors.turn = this.neuralNoise; 
+                this.motors.thrust = 0.4 + Math.random() * 0.4; 
+                this.wanderTimer = 10 + Math.random() * 20; 
+            } else {
+                updateState('SOCH RAHI HAI (THINKING)');
+                this.motors.thrust = 0; 
+                this.motors.turn = (Math.random() - 0.5) * 1.0 + this.neuralNoise; 
+                this.wanderTimer = 15 + Math.random() * 30; 
+                
+                if (this.sensors.dist_from_center > SAFE_RADIUS) {
+                    let angleToCenter = Math.atan2(-this.body.position.x, -this.body.position.z);
+                    let diff = angleToCenter - this.body.rotation;
+                    while (diff < -Math.PI) diff += Math.PI * 2; while (diff > Math.PI) diff -= Math.PI * 2;
+                    this.motors.turn += diff * 0.3; 
+                }
+            }
+            if (Math.random() < 0.05 && this.energy > 50) {
+                updateState('UD RAHI HAI (FLYING)');
+                this.motors.fly = true; this.motors.thrust = 0.8; this.wanderTimer = 30; 
+            }
+        } else if (this.isDarting) {
+            this.motors.turn = this.neuralNoise; 
+        } else {
+            this.motors.turn = this.neuralNoise; 
+            this.motors.thrust = 0;
+        }
+    }
+
+    applyMotorOutputs(time) {
+        // Wind effect
+        const windStrength = 0.02 + Math.sin(time * 0.5) * 0.01;
+        const currentWind = wind.clone().multiplyScalar(windStrength);
+        
+        // Natural micro-jitter for realism
+        const jitter = (Math.random() - 0.5) * 0.01;
+        this.body.rotation += this.body.currentTurnRate + jitter;
+        
+        this.body.currentSpeed += (this.motors.thrust - this.body.currentSpeed) * 0.4;
+        this.body.currentTurnRate += (this.motors.turn - this.body.currentTurnRate) * 0.5;
+
+        if (!this.motors.eat && !this.motors.groom && !this.motors.drink && !this.motors.sleep && !this.motors.fly && this.body.currentSpeed < 0.02) {
+            this.body.resetPosture();
+        }
+
+        let nextX = this.body.position.x;
+        let nextZ = this.body.position.z;
+
+        if (this.body.currentSpeed !== 0 && !this.motors.groom && !this.motors.eat && !this.motors.drink && !this.motors.sleep) {
+            nextX += Math.sin(this.body.rotation) * this.body.currentSpeed;
+            nextZ += Math.cos(this.body.rotation) * this.body.currentSpeed;
+            
+            // Apply wind if flying
+            if (this.motors.fly) {
+                nextX += currentWind.x;
+                nextZ += currentWind.z;
+            }
+            
+            if (!this.motors.fly) this.body.animateWalk(this.body.currentSpeed);
+        }
+
+        let collided = false;
+        let collisionNormal = new THREE.Vector3();
+        
+        obstacles.forEach(obs => {
+            const dx = nextX - obs.x; const dz = nextZ - obs.z;
+            const distSq = dx*dx + dz*dz;
+            const minSpace = obs.radius + 2.0; // More buffer
+            const minSpaceSq = minSpace * minSpace;
+            
+            if (distSq < minSpaceSq) {
+                collided = true;
+                const dist = Math.sqrt(distSq);
+                const angle = Math.atan2(dx, dz); 
+                collisionNormal.set(Math.sin(angle), 0, Math.cos(angle));
+                
+                // Strong push out
+                const overlap = minSpace - dist;
+                nextX += collisionNormal.x * (overlap + 0.5);
+                nextZ += collisionNormal.z * (overlap + 0.5);
+                
+                // Steer away more intelligently
+                const currentDir = new THREE.Vector3(Math.sin(this.body.rotation), 0, Math.cos(this.body.rotation));
+                const reflection = currentDir.reflect(collisionNormal);
+                this.body.rotation = Math.atan2(reflection.x, reflection.z);
+                
+                this.body.currentSpeed *= 0.05;
+            }
+        });
+
+        const distFromCenter = Math.hypot(nextX, nextZ);
+        if (distFromCenter > MAP_RADIUS - 1) {
+            collided = true;
+            const angle = Math.atan2(nextX, nextZ);
+            const overlap = distFromCenter - (MAP_RADIUS - 1);
+            nextX -= Math.sin(angle) * overlap;
+            nextZ -= Math.cos(angle) * overlap;
+        }
+
+        if (collided && Math.abs(this.motors.thrust) > 0.1) {
+            this.stuckTimer++;
+            // Emergency push-out if stuck inside an object
+            if (this.stuckTimer > 25) {
+                const toCenter = new THREE.Vector3().sub(this.body.position).normalize();
+                this.body.position.addScaledVector(toCenter, 0.5);
+            }
+        } else {
+            this.stuckTimer = 0;
+        }
+
+        this.body.position.x = nextX;
+        this.body.position.z = nextZ;
+
+        this.body.animateFlyPos(this.motors.fly, this.body.currentTurnRate, this.body.currentSpeed, time);
+        if (this.motors.fly) this.body.animateWings(1, time); else this.body.animateWings(0, time);
+
+        if (this.motors.eat) this.body.animateEat(time);
+        if (this.motors.drink) this.body.animateDrink(time);
+        if (this.motors.sleep) this.body.animateSleep(time);
+        if (this.motors.groom) this.body.animateGroom(time);
+
+        this.body.rotation += this.body.currentTurnRate;
+        this.body.rotation = this.body.rotation % (Math.PI * 2);
+        
+        this.body.mesh.position.copy(this.body.position);
+        this.body.mesh.rotation.y = this.body.rotation;
+        
+        this.body.updateCamera();
+    }
+
+    updateTelemetry() {
+        const stateEl = document.getElementById('val-state');
+        stateEl.innerText = this.state;
+        
+        let color = '#9ca3af';
+        if(this.state.includes('THINKING')) color = '#a78bfa';
+        if(this.state.includes('DARTING') || this.state.includes('FLYING')) color = '#3b82f6';
+        if(this.state.includes('HUNTING')) color = '#f59e0b';
+        if(this.state.includes('EATING')) color = '#10b981';
+        if(this.state.includes('GROOMING')) color = '#a8a29e';
+        if(this.state.includes('ESCAPE') || this.state.includes('AVOIDING') || this.state.includes('RETURNING')) color = '#ef4444';
+        if(this.state.includes('SLEEPING')) color = '#8b5cf6';
+        if(this.state.includes('DRINKING')) color = '#3b82f6';
+        stateEl.style.color = color;
+
+        document.getElementById('val-hunger').innerText = Math.floor(this.hunger) + '%';
+        document.getElementById('bar-hunger').style.width = this.hunger + '%';
+        document.getElementById('val-thirst').innerText = Math.floor(this.thirst) + '%';
+        document.getElementById('bar-thirst').style.width = this.thirst + '%';
+        document.getElementById('val-sleep').innerText = Math.floor(this.sleepiness) + '%';
+        document.getElementById('bar-sleep').style.width = this.sleepiness + '%';
+        document.getElementById('val-energy').innerText = Math.floor(this.energy) + '%';
+        document.getElementById('bar-energy').style.width = this.energy + '%';
+        document.getElementById('val-fatigue').innerText = Math.floor(this.fatigue) + '%';
+        document.getElementById('bar-fatigue').style.width = this.fatigue + '%';
+        document.getElementById('val-age').innerText = Math.floor((this.age / this.maxAge) * 100) + '%';
+        document.getElementById('bar-age').style.width = (this.age / this.maxAge) * 100 + '%';
+        document.getElementById('val-learning').innerText = Math.floor(this.learning) + '%';
+        document.getElementById('bar-learning').style.width = this.learning + '%';
+
+        netVis.update(this);
+    }
+}
+
+// --- ADVANCED NETWORK VISUALIZER ---
+class NetworkVisualizer {
+    constructor() {
+        this.canvas = document.getElementById('network-canvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.resize();
+        window.addEventListener('resize', () => this.resize());
+        
+        this.particles = [];
+        for(let i=0; i<60; i++) {
+            this.particles.push({
+                x: Math.random() * this.canvas.width,
+                y: Math.random() * this.canvas.height,
+                vx: (Math.random() - 0.5) * 0.5,
+                vy: (Math.random() - 0.5) * 0.5,
+                size: Math.random() * 2
+            });
+        }
+    }
+    resize() {
+        const rect = this.canvas.parentElement.getBoundingClientRect();
+        this.canvas.width = rect.width || 200; 
+        this.canvas.height = 80; 
+    }
+    update(brain) {
+        this.draw(brain);
+    }
+    draw(brain) {
+        const w = this.canvas.width, h = this.canvas.height;
+        this.ctx.fillStyle = '#000';
+        this.ctx.fillRect(0, 0, w, h);
+
+        const overallActivity = brain.neuralActivity.reduce((a, b) => a + b, 0) / brain.neuralActivity.length;
+
+        // Draw Optic Lobes (Matching Image)
+        const lobeRadius = h * 0.4;
+        const centerY = h * 0.5;
+        
+        // Left Lobe
+        const gradL = this.ctx.createRadialGradient(w*0.2, centerY, 0, w*0.2, centerY, lobeRadius);
+        gradL.addColorStop(0, `rgba(0, 150, 255, ${0.3 + overallActivity * 0.5})`);
+        gradL.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        this.ctx.fillStyle = gradL;
+        this.ctx.beginPath();
+        this.ctx.arc(w*0.2, centerY, lobeRadius, 0, Math.PI*2);
+        this.ctx.fill();
+
+        // Right Lobe
+        const gradR = this.ctx.createRadialGradient(w*0.8, centerY, 0, w*0.8, centerY, lobeRadius);
+        gradR.addColorStop(0, `rgba(0, 150, 255, ${0.3 + overallActivity * 0.5})`);
+        gradR.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        this.ctx.fillStyle = gradR;
+        this.ctx.beginPath();
+        this.ctx.arc(w*0.8, centerY, lobeRadius, 0, Math.PI*2);
+        this.ctx.fill();
+
+        // Complex Colorful Network (Matching FlyWire Image)
+        const colors = ['#ff00ff', '#00ffff', '#ffff00', '#ff0000', '#00ff00', '#0000ff'];
+        this.ctx.lineWidth = 0.5;
+        for(let i=0; i<30; i++) {
+            const x1 = w*0.3 + Math.random()*w*0.4;
+            const y1 = h*0.2 + Math.random()*h*0.6;
+            const x2 = w*0.3 + Math.random()*w*0.4;
+            const y2 = h*0.2 + Math.random()*h*0.6;
+            
+            this.ctx.strokeStyle = colors[i % colors.length] + (Math.floor((0.1 + overallActivity*0.4)*255).toString(16).padStart(2, '0'));
+            this.ctx.beginPath();
+            this.ctx.moveTo(x1, y1);
+            this.ctx.lineTo(x2, y2);
+            this.ctx.stroke();
+        }
+
+        // Particles (Neural Activity)
+        this.particles.forEach(p => {
+            p.x += p.vx * (1 + overallActivity * 15);
+            p.y += p.vy * (1 + overallActivity * 15);
+            if(p.x < 0) p.x = w; if(p.x > w) p.x = 0;
+            if(p.y < 0) p.y = h; if(p.y > h) p.y = 0;
+            
+            this.ctx.fillStyle = `rgba(255, 255, 255, ${0.4 + overallActivity})`;
+            this.ctx.beginPath();
+            this.ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+            this.ctx.fill();
+        });
+
+        // Text
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        this.ctx.font = 'italic 9px serif';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('simultaneous brain emulation', w * 0.5, h - 8);
+    }
+}
+
+// --- START APP ---
+buildStylizedEnvironment();
+const fly = new StylizedFly();
+const brain = new BrainEngine(fly);
+const netVis = new NetworkVisualizer();
+
+document.getElementById('btn-food').addEventListener('click', () => spawnBananaSlice(false));
+document.getElementById('btn-scare').addEventListener('click', () => brain.triggerStartle());
+document.getElementById('btn-dust').addEventListener('click', () => spawnVirtualDust(false));
+
+const camLabel = document.getElementById('cam-name');
+const camToast = document.getElementById('cam-toast');
+let camLabelTimeout, toastTimeout;
+
+document.getElementById('btn-camera').addEventListener('click', () => {
+    currentCamIdx = (currentCamIdx + 1) % CAM_MODES.length;
+    const mode = CAM_MODES[currentCamIdx];
+    
+    camLabel.innerText = mode.name;
+    camLabel.style.opacity = '1';
+    clearTimeout(camLabelTimeout);
+    camLabelTimeout = setTimeout(() => { camLabel.style.opacity = '0'; }, 2000);
+    
+    if (mode.type === 'free') {
+        controls.enabled = true;
+        controls.target.copy(fly.position);
+        camera.position.set(fly.position.x, fly.position.y + 30, fly.position.z - 50);
+        controls.update();
+
+        camToast.style.opacity = '1';
+        clearTimeout(toastTimeout);
+        toastTimeout = setTimeout(() => { camToast.style.opacity = '0'; }, 4000);
+    } else {
+        controls.enabled = false;
+        camToast.style.opacity = '0';
+    }
+});
+
+const toggleBtn = document.getElementById('toggle-ui-btn');
+const uiLayer = document.getElementById('ui-layer');
+let uiVisible = true;
+toggleBtn.addEventListener('click', () => {
+    uiVisible = !uiVisible;
+    if (uiVisible) {
+        uiLayer.classList.remove('ui-hidden');
+        netVis.resize(); 
+    } else {
+        uiLayer.classList.add('ui-hidden');
+    }
+});
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    if(uiVisible) netVis.resize();
+});
+
+let clock = new THREE.Clock();
+function animate() {
+    requestAnimationFrame(animate);
+    const time = clock.getElapsedTime();
+
+    for(let i=dustParticles.length-1; i>=0; i--) {
+        const p = dustParticles[i];
+        p.mesh.position.y += p.vy;
+        if(p.mesh.position.y < 0) { scene.remove(p.mesh); dustParticles.splice(i, 1); }
+    }
+
+    brain.evaluateEnvironment();
+    brain.processNeuralCircuits();
+    brain.applyMotorOutputs(time); 
+    
+    if(uiVisible) brain.updateTelemetry();
+    renderer.render(scene, camera);
+}
+
+spawnBananaSlice(true);
+animate();
+</script>
+</body>
+</html>

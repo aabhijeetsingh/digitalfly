@@ -1,0 +1,5 @@
+{
+  "name": "140k Neuron Fly Connectome",
+  "description": "A realistic 3D Drosophila simulation powered by a 140,000 neuron connectome engine.",
+  "requestFramePermissions": []
+}
